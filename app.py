@@ -1,38 +1,32 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
+import pygsheets
 from streamlit_autorefresh import st_autorefresh
 
 @st.cache_resource
 def connect_sheet():
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
     creds_dict = st.secrets["gcp_service_account"]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    client = gspread.authorize(creds)
-    return client.open("UAEW_App").worksheet("App")
+    client = pygsheets.authorize(service_account_info=creds_dict)
+    return client.open("UAEW_App").worksheet_by_title("App")
 
 @st.cache_data(ttl=300)
-def load_data():
-    sheet = connect_sheet()
+def load_data(sheet):
     data = sheet.get_all_records()
     df = pd.DataFrame(data)
     df["original_index"] = df.index
-    return df, sheet
+    return df
 
 def salvar_valor(sheet, row, col_index, valor):
     try:
-        sheet.update_cell(row + 2, col_index + 1, valor)
+        sheet.update_value((row + 2, col_index + 1), valor)
     except Exception as e:
         st.error(f"Erro ao salvar valor: linha {row+2}, coluna {col_index+1}: {e}")
 
 st.set_page_config(page_title="UAEW Fighters", layout="wide")
 st_autorefresh(interval=10000, key="autorefresh")
 
-df, sheet = load_data()
+sheet = connect_sheet()
+df = load_data(sheet)
 
 with st.sidebar:
     st.header("Filtros")
@@ -100,13 +94,7 @@ for i, row in df.iterrows():
         with st.expander("Exibir detalhes"):
             editar = st.toggle("✏️ Editar informações", key=f"edit_toggle_{i}", value=row.get("LockBy") == "1724")
 
-            try:
-                headers = list(df.columns)  # ✅ cabeçalhos extraídos com segurança do df
-            except Exception as e:
-                st.error("❌ Erro ao acessar os cabeçalhos da planilha.")
-                st.code(str(e))
-                st.stop()
-
+            headers = list(df.columns)
             lock_col_idx = headers.index("LockBy") if "LockBy" in headers else None
 
             if editar and lock_col_idx is not None and row.get("LockBy") != "1724":
